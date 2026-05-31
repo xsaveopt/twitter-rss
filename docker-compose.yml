@@ -1,0 +1,11 @@
+services:
+  twitter-rss:
+    image: ghcr.io/sratabix/twitter-rss:latest
+    container_name: twitter-rss
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      TWITTER_RSS_NITTER: https://nitter.example.com
+      TWITTER_RSS_CACHE_TTL: 5m
+      TZ: Europe/Amsterdam

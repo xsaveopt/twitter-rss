@@ -1,0 +1,22 @@
+name: GHCR cleanup
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  prune-untagged:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55
+        continue-on-error: true
+        with:
+          package-name: ${{ github.event.repository.name }}
+          package-type: container
+          delete-only-untagged-versions: "true"
+          min-versions-to-keep: "0"
