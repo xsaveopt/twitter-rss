@@ -1,4 +1,4 @@
-module github.com/sratabix/twitter-rss
+module github.com/xsaveopt/twitter-rss
 
 go 1.26.3
 

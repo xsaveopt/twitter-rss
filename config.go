@@ -23,7 +23,7 @@ func FromEnv() (Config, error) {
 		NitterBase:   strings.TrimRight(os.Getenv("TWITTER_RSS_NITTER"), "/"),
 		CacheTTL:     envDuration("TWITTER_RSS_CACHE_TTL", 5*time.Minute),
 		RewriteLinks: envBool("TWITTER_RSS_REWRITE_LINKS", true),
-		UserAgent:    envOr("TWITTER_RSS_USER_AGENT", "twitter-rss/"+version+" (+https://github.com/sratabix/twitter-rss)"),
+		UserAgent:    envOr("TWITTER_RSS_USER_AGENT", "twitter-rss/"+version+" (+https://github.com/xsaveopt/twitter-rss)"),
 		HTTPTimeout:  envDuration("TWITTER_RSS_HTTP_TIMEOUT", 15*time.Second),
 	}
 

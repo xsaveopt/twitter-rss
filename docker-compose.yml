@@ -1,6 +1,6 @@
 services:
   twitter-rss:
-    image: ghcr.io/sratabix/twitter-rss:latest
+    image: ghcr.io/xsaveopt/twitter-rss:latest
     container_name: twitter-rss
     restart: unless-stopped
     ports:

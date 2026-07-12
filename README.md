@@ -28,7 +28,7 @@ You need a reachable Nitter instance (public instances are mostly dead, so self-
 ```yaml
 services:
   twitter-rss:
-    image: ghcr.io/sratabix/twitter-rss:latest
+    image: ghcr.io/xsaveopt/twitter-rss:latest
     container_name: twitter-rss
     restart: unless-stopped
     ports:
@@ -51,7 +51,7 @@ Everything is configured through environment variables (see the table below). Th
 
 ## Image tags
 
-`latest` for the latest stable release. `1`, `1.2`, `1.2.3` to pin to a major, minor, or patch line. Pre-releases like `1.2.3-rc1` are never tagged `latest`. `dev` tracks the tip of `main`, rebuilt on every commit — the easiest tag for testing without waiting for a release. Images are published to `ghcr.io/sratabix/twitter-rss` and built for `linux/amd64`.
+`latest` for the latest stable release. `1`, `1.2`, `1.2.3` to pin to a major, minor, or patch line. Pre-releases like `1.2.3-rc1` are never tagged `latest`. `dev` tracks the tip of `main`, rebuilt on every commit — the easiest tag for testing without waiting for a release. Images are published to `ghcr.io/xsaveopt/twitter-rss` and built for `linux/amd64`.
 
 ## Environment variables
 
