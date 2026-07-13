@@ -35,7 +35,7 @@ func (b *builder) Single(f *Feed) (string, error) {
 	return out.ToRss()
 }
 
-func (b *builder) Combined(authorName string, feeds_ []*Feed) (string, error) {
+func (b *builder) Combined(authorName string, list []*Feed) (string, error) {
 	out := &feeds.Feed{
 		Title:       "Tracked Twitter accounts",
 		Link:        &feeds.Link{Href: "https://x.com"},
@@ -43,7 +43,7 @@ func (b *builder) Combined(authorName string, feeds_ []*Feed) (string, error) {
 		Author:      &feeds.Author{Name: authorName},
 		Created:     time.Now(),
 	}
-	for _, f := range feeds_ {
+	for _, f := range list {
 		out.Items = append(out.Items, b.items(f.Handle, f.Items)...)
 	}
 	sort.SliceStable(out.Items, func(i, j int) bool {

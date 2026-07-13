@@ -12,7 +12,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
 	-ldflags="-s -w -X main.version=${VERSION}" \
 	-o /twitter-rss .
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /twitter-rss /twitter-rss
 EXPOSE 8080
 USER nonroot:nonroot
