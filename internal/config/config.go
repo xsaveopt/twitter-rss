@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -10,28 +10,37 @@ import (
 
 type Config struct {
 	Addr         string
-	NitterBase   string
+	NitterBases  []string
 	CacheTTL     time.Duration
 	RewriteLinks bool
 	UserAgent    string
 	HTTPTimeout  time.Duration
 }
 
-func FromEnv() (Config, error) {
+func FromEnv(version string) (Config, error) {
 	c := Config{
 		Addr:         envOr("TWITTER_RSS_ADDR", ":8080"),
-		NitterBase:   strings.TrimRight(os.Getenv("TWITTER_RSS_NITTER"), "/"),
 		CacheTTL:     envDuration("TWITTER_RSS_CACHE_TTL", 5*time.Minute),
 		RewriteLinks: envBool("TWITTER_RSS_REWRITE_LINKS", true),
 		UserAgent:    envOr("TWITTER_RSS_USER_AGENT", "twitter-rss/"+version+" (+https://github.com/xsaveopt/twitter-rss)"),
 		HTTPTimeout:  envDuration("TWITTER_RSS_HTTP_TIMEOUT", 15*time.Second),
 	}
 
-	if c.NitterBase == "" {
-		return c, fmt.Errorf("TWITTER_RSS_NITTER is required (e.g. https://nitter.example.com)")
+	seen := make(map[string]bool)
+	for raw := range strings.SplitSeq(os.Getenv("TWITTER_RSS_NITTER"), ",") {
+		base := strings.TrimRight(strings.TrimSpace(raw), "/")
+		if base == "" || seen[base] {
+			continue
+		}
+		if _, err := url.ParseRequestURI(base); err != nil {
+			return c, fmt.Errorf("TWITTER_RSS_NITTER contains an invalid URL %q: %w", base, err)
+		}
+		seen[base] = true
+		c.NitterBases = append(c.NitterBases, base)
 	}
-	if _, err := url.ParseRequestURI(c.NitterBase); err != nil {
-		return c, fmt.Errorf("TWITTER_RSS_NITTER is not a valid URL: %w", err)
+
+	if len(c.NitterBases) == 0 {
+		return c, fmt.Errorf("TWITTER_RSS_NITTER is required (e.g. https://nitter-one.example.com,https://nitter-two.example.com)")
 	}
 	return c, nil
 }

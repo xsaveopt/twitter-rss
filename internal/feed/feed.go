@@ -1,4 +1,4 @@
-package main
+package feed
 
 import (
 	"sort"
@@ -6,20 +6,21 @@ import (
 	"time"
 
 	"github.com/gorilla/feeds"
-	"github.com/mmcdole/gofeed"
+
+	"github.com/xsaveopt/twitter-rss/internal/config"
+	"github.com/xsaveopt/twitter-rss/internal/nitter"
 )
 
-type builder struct {
-	nitterBase   string
+type Builder struct {
 	rewriteLinks bool
 }
 
-func newBuilder(cfg Config) *builder {
-	return &builder{nitterBase: cfg.NitterBase, rewriteLinks: cfg.RewriteLinks}
+func NewBuilder(cfg config.Config) *Builder {
+	return &Builder{rewriteLinks: cfg.RewriteLinks}
 }
 
-func (b *builder) Single(f *Feed) (string, error) {
-	link := b.rewrite(f.Link)
+func (b *Builder) Single(f *nitter.Feed) (string, error) {
+	link := b.rewrite(f.Origins, f.Link)
 	if link == "" {
 		link = "https://x.com/" + f.Handle
 	}
@@ -31,11 +32,11 @@ func (b *builder) Single(f *Feed) (string, error) {
 		Author:      &feeds.Author{Name: "@" + f.Handle},
 		Created:     f.Fetched,
 	}
-	out.Items = b.items(f.Handle, f.Items)
+	out.Items = b.items(f)
 	return out.ToRss()
 }
 
-func (b *builder) Combined(authorName string, list []*Feed) (string, error) {
+func (b *Builder) Combined(authorName string, list []*nitter.Feed) (string, error) {
 	out := &feeds.Feed{
 		Title:       "Tracked Twitter accounts",
 		Link:        &feeds.Link{Href: "https://x.com"},
@@ -44,7 +45,7 @@ func (b *builder) Combined(authorName string, list []*Feed) (string, error) {
 		Created:     time.Now(),
 	}
 	for _, f := range list {
-		out.Items = append(out.Items, b.items(f.Handle, f.Items)...)
+		out.Items = append(out.Items, b.items(f)...)
 	}
 	sort.SliceStable(out.Items, func(i, j int) bool {
 		return out.Items[i].Created.After(out.Items[j].Created)
@@ -52,14 +53,15 @@ func (b *builder) Combined(authorName string, list []*Feed) (string, error) {
 	return out.ToRss()
 }
 
-func (b *builder) items(handle string, in []*gofeed.Item) []*feeds.Item {
-	items := make([]*feeds.Item, 0, len(in))
-	for _, it := range in {
+func (b *Builder) items(f *nitter.Feed) []*feeds.Item {
+	handle := f.Handle
+	items := make([]*feeds.Item, 0, len(f.Items))
+	for _, it := range f.Items {
 		created := time.Now()
 		if it.PublishedParsed != nil {
 			created = *it.PublishedParsed
 		}
-		link := b.rewrite(it.Link)
+		link := b.rewrite(f.Origins, it.Link)
 		id := it.GUID
 		if id == "" {
 			id = link
@@ -76,12 +78,15 @@ func (b *builder) items(handle string, in []*gofeed.Item) []*feeds.Item {
 	return items
 }
 
-func (b *builder) rewrite(link string) string {
+func (b *Builder) rewrite(origins []string, link string) string {
 	if !b.rewriteLinks || link == "" {
 		return link
 	}
-	if strings.HasPrefix(link, b.nitterBase) {
-		link = "https://x.com" + strings.TrimPrefix(link, b.nitterBase)
+	for _, origin := range origins {
+		if rest, ok := strings.CutPrefix(link, origin); ok {
+			link = "https://x.com" + rest
+			break
+		}
 	}
 	return strings.TrimSuffix(link, "#m")
 }
@@ -94,7 +99,7 @@ func prefixHandle(handle, title string) string {
 	return p + title
 }
 
-func titleOrDefault(f *Feed) string {
+func titleOrDefault(f *nitter.Feed) string {
 	if f.Title != "" {
 		return f.Title
 	}
