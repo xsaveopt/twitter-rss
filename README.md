@@ -15,6 +15,7 @@ Images are published to ghcr.io/xsaveopt/twitter-rss, where latest is the newest
 | --------------------------- | --------------------- | ------------------------------------------------------------- |
 | `TWITTER_RSS_NITTER`        | required              | Comma-separated base URLs of the Nitter instances to use.     |
 | `TWITTER_RSS_ADDR`          | `:8080`               | Address the HTTP server listens on.                           |
+| `TWITTER_RSS_BASE_PATH`     | none                  | Subpath the feeds are also served under, like /twitter-rss.   |
 | `TWITTER_RSS_CACHE_TTL`     | `5m`                  | How long a fetched feed is served before it is fetched again. |
 | `TWITTER_RSS_REWRITE_LINKS` | `true`                | Rewrite Nitter links to x.com.                                |
 | `TWITTER_RSS_HTTP_TIMEOUT`  | `15s`                 | Timeout for each request to a Nitter instance.                |

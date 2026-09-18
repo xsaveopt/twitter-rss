@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	Addr         string
+	BasePath     string
 	NitterBases  []string
 	CacheTTL     time.Duration
 	RewriteLinks bool
@@ -20,6 +21,7 @@ type Config struct {
 func FromEnv(version string) (Config, error) {
 	c := Config{
 		Addr:         envOr("TWITTER_RSS_ADDR", ":8080"),
+		BasePath:     envPath("TWITTER_RSS_BASE_PATH"),
 		CacheTTL:     envDuration("TWITTER_RSS_CACHE_TTL", 5*time.Minute),
 		RewriteLinks: envBool("TWITTER_RSS_REWRITE_LINKS", true),
 		UserAgent:    envOr("TWITTER_RSS_USER_AGENT", "twitter-rss/"+version+" (+https://github.com/xsaveopt/twitter-rss)"),
@@ -50,6 +52,14 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func envPath(key string) string {
+	p := strings.Trim(strings.TrimSpace(os.Getenv(key)), "/")
+	if p == "" {
+		return ""
+	}
+	return "/" + p
 }
 
 func envBool(key string, def bool) bool {

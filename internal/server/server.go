@@ -35,19 +35,28 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /u/{handle}", s.handleUser)
 	mux.HandleFunc("GET /combined", s.handleCombined)
-	return mux
+
+	if s.cfg.BasePath == "" {
+		return mux
+	}
+
+	outer := http.NewServeMux()
+	outer.Handle("/", mux)
+	outer.Handle(s.cfg.BasePath+"/", http.StripPrefix(s.cfg.BasePath, mux))
+	return outer
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	base := s.cfg.BasePath
 	_, _ = fmt.Fprintf(w, `twitter-rss %s
 
-Per-user feed:   /u/{handle}
-Combined feed:   /combined?users=handle1,handle2,handle3
-Health:          /healthz
+Per-user feed:   %s/u/{handle}
+Combined feed:   %s/combined?users=handle1,handle2,handle3
+Health:          %s/healthz
 
 Backed by Nitter at %s
-`, s.version, strings.Join(s.cfg.NitterBases, ", "))
+`, s.version, base, base, base, strings.Join(s.cfg.NitterBases, ", "))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
