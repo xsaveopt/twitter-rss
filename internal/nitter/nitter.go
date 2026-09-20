@@ -39,6 +39,7 @@ type Client struct {
 	http   *http.Client
 	parser *gofeed.Parser
 	next   atomic.Uint64
+	now    func() time.Time
 
 	ttl   time.Duration
 	mu    sync.Mutex
@@ -52,6 +53,7 @@ func NewClient(cfg config.Config) *Client {
 		ua:     cfg.UserAgent,
 		http:   &http.Client{Timeout: cfg.HTTPTimeout},
 		parser: gofeed.NewParser(),
+		now:    time.Now,
 		ttl:    cfg.CacheTTL,
 		cache:  make(map[string]*Feed),
 		down:   make(map[string]time.Time),
@@ -62,7 +64,7 @@ func (c *Client) Fetch(ctx context.Context, handle string) (*Feed, error) {
 	handle = strings.ToLower(handle)
 
 	c.mu.Lock()
-	if f, ok := c.cache[handle]; ok && time.Since(f.Fetched) < c.ttl {
+	if f, ok := c.cache[handle]; ok && c.now().Sub(f.Fetched) < c.ttl {
 		c.mu.Unlock()
 		return f, nil
 	}
@@ -85,7 +87,7 @@ func (c *Client) Fetch(ctx context.Context, handle string) (*Feed, error) {
 		var nf notFoundError
 		if !errors.As(err, &nf) && ctx.Err() == nil {
 			c.mu.Lock()
-			c.down[base] = time.Now().Add(instanceCooldown)
+			c.down[base] = c.now().Add(instanceCooldown)
 			c.mu.Unlock()
 		}
 	}
@@ -98,7 +100,7 @@ func (c *Client) order() []string {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	now := time.Now()
+	now := c.now()
 	up := make([]string, 0, n)
 	var cooling []string
 	for i := range n {
@@ -149,7 +151,7 @@ func (c *Client) fetch(ctx context.Context, base, handle string) (*Feed, error) 
 		Link:    parsed.Link,
 		Origins: []string{base},
 		Items:   parsed.Items,
-		Fetched: time.Now(),
+		Fetched: c.now(),
 	}
 	if p, err := url.Parse(parsed.Link); err == nil && p.Scheme != "" && p.Host != "" {
 		if origin := p.Scheme + "://" + p.Host; origin != base {
