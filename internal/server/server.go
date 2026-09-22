@@ -30,20 +30,26 @@ func New(cfg config.Config, version string, log *slog.Logger) *Server {
 }
 
 func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.handleIndex)
-	mux.HandleFunc("GET /healthz", s.handleHealth)
-	mux.HandleFunc("GET /u/{handle}", s.handleUser)
-	mux.HandleFunc("GET /combined", s.handleCombined)
-
+	full := s.routes(true)
 	if s.cfg.BasePath == "" {
-		return mux
+		return full
 	}
 
 	outer := http.NewServeMux()
-	outer.Handle("/", mux)
-	outer.Handle(s.cfg.BasePath+"/", http.StripPrefix(s.cfg.BasePath, mux))
+	outer.Handle("/", s.routes(false))
+	outer.Handle(s.cfg.BasePath+"/", http.StripPrefix(s.cfg.BasePath, full))
 	return outer
+}
+
+func (s *Server) routes(includeHealth bool) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", s.handleIndex)
+	if includeHealth {
+		mux.HandleFunc("GET /health", s.handleHealth)
+	}
+	mux.HandleFunc("GET /u/{handle}", s.handleUser)
+	mux.HandleFunc("GET /combined", s.handleCombined)
+	return mux
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -53,15 +59,20 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 Per-user feed:   %s/u/{handle}
 Combined feed:   %s/combined?users=handle1,handle2,handle3
-Health:          %s/healthz
+Health:          %s/health
 
 Backed by Nitter at %s
 `, s.version, base, base, base, strings.Join(s.cfg.NitterBases, ", "))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if !s.client.Healthy() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("degraded"))
+		return
+	}
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("ok"))
+	_, _ = w.Write([]byte("up"))
 }
 
 func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {

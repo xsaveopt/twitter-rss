@@ -16,4 +16,6 @@ FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /twitter-rss /twitter-rss
 EXPOSE 8080
 USER nonroot:nonroot
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+	CMD ["/twitter-rss", "healthcheck"]
 ENTRYPOINT ["/twitter-rss"]

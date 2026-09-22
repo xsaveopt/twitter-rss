@@ -86,7 +86,7 @@ func TestHandleIndex(t *testing.T) {
 		"twitter-rss 1.2.3",
 		"/u/{handle}",
 		"/combined?users=handle1,handle2,handle3",
-		"/healthz",
+		"/health",
 		up.URL + ", https://second.example.com",
 	} {
 		if !strings.Contains(body, want) {
@@ -100,7 +100,7 @@ func TestHandleIndexAdvertisesBasePath(t *testing.T) {
 	h := newServer(t, "/twitter", up.URL).Handler()
 
 	body := get(t, h, "/twitter/").Body.String()
-	for _, want := range []string{"/twitter/u/{handle}", "/twitter/combined?users=", "/twitter/healthz"} {
+	for _, want := range []string{"/twitter/u/{handle}", "/twitter/combined?users=", "/twitter/health"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("index body does not contain %q:\n%s", want, body)
 		}
@@ -120,12 +120,33 @@ func TestHandleHealth(t *testing.T) {
 	up := nitterStub(t, map[string]bool{"gopher": true})
 	h := newServer(t, "", up.URL).Handler()
 
-	rec := get(t, h, "/healthz")
+	rec := get(t, h, "/health")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if rec.Body.String() != "ok" {
-		t.Errorf("body = %q, want ok", rec.Body.String())
+	if rec.Body.String() != "up" {
+		t.Errorf("body = %q, want up", rec.Body.String())
+	}
+}
+
+func TestHandleHealthDegradedWhenAllInstancesAreDown(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(up.Close)
+	s := newServer(t, "", up.URL)
+	h := s.Handler()
+
+	if rec := get(t, h, "/u/gopher"); rec.Code != http.StatusBadGateway {
+		t.Fatalf("priming failure: status = %d, want 502", rec.Code)
+	}
+
+	rec := get(t, h, "/health")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	if rec.Body.String() != "degraded" {
+		t.Errorf("body = %q, want degraded", rec.Body.String())
 	}
 }
 
@@ -347,8 +368,8 @@ func TestHandlerBasePathMounting(t *testing.T) {
 			if rec := get(t, h, tt.prefix+"/"); rec.Code != http.StatusOK {
 				t.Errorf("index at %q = %d, want 200", tt.prefix+"/", rec.Code)
 			}
-			if rec := get(t, h, tt.prefix+"/healthz"); rec.Code != http.StatusOK || rec.Body.String() != "ok" {
-				t.Errorf("health at %q = %d %q", tt.prefix+"/healthz", rec.Code, rec.Body.String())
+			if rec := get(t, h, tt.prefix+"/health"); rec.Code != http.StatusOK || rec.Body.String() != "up" {
+				t.Errorf("health at %q = %d %q", tt.prefix+"/health", rec.Code, rec.Body.String())
 			}
 			if rec := get(t, h, tt.prefix+"/u/gopher"); rec.Code != http.StatusOK {
 				t.Errorf("user feed at %q = %d, want 200", tt.prefix+"/u/gopher", rec.Code)
@@ -359,6 +380,10 @@ func TestHandlerBasePathMounting(t *testing.T) {
 
 			if tt.prefix == "" {
 				return
+			}
+
+			if rec := get(t, h, "/health"); rec.Code != http.StatusNotFound {
+				t.Errorf("root health with base path %q = %d, want 404", tt.prefix, rec.Code)
 			}
 
 			rec := get(t, h, tt.prefix)
@@ -376,10 +401,17 @@ func TestHandlerServesRootAlongsideBasePath(t *testing.T) {
 	up := nitterStub(t, map[string]bool{"gopher": true})
 	h := newServer(t, "/twitter", up.URL).Handler()
 
-	for _, target := range []string{"/", "/healthz", "/u/gopher", "/combined?users=gopher"} {
+	for _, target := range []string{"/", "/u/gopher", "/combined?users=gopher"} {
 		if rec := get(t, h, target); rec.Code != http.StatusOK {
 			t.Errorf("status for %q = %d, want 200; the root mount must keep working", target, rec.Code)
 		}
+	}
+
+	if rec := get(t, h, "/health"); rec.Code != http.StatusNotFound {
+		t.Errorf("root health with a base path set = %d, want 404", rec.Code)
+	}
+	if rec := get(t, h, "/twitter/health"); rec.Code != http.StatusOK || rec.Body.String() != "up" {
+		t.Errorf("health under the base path = %d %q, want 200 up", rec.Code, rec.Body.String())
 	}
 }
 
@@ -387,7 +419,7 @@ func TestHandlerUnknownPathsUnderBasePath(t *testing.T) {
 	up := nitterStub(t, map[string]bool{"gopher": true})
 	h := newServer(t, "/twitter", up.URL).Handler()
 
-	for _, target := range []string{"/twitter/nonsense", "/twitter/u/", "/other/healthz"} {
+	for _, target := range []string{"/twitter/nonsense", "/twitter/u/", "/other/health"} {
 		if rec := get(t, h, target); rec.Code != http.StatusNotFound {
 			t.Errorf("status for %q = %d, want 404", target, rec.Code)
 		}

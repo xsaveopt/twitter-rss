@@ -123,7 +123,7 @@ func waitForHealth(t *testing.T, url string) {
 		if err == nil {
 			body, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK && string(body) == "ok" {
+			if resp.StatusCode == http.StatusOK && string(body) == "up" {
 				return
 			}
 		}
@@ -157,12 +157,12 @@ func TestMainServesAndShutsDownGracefully(t *testing.T) {
 	)
 
 	base := "http://" + addr
-	waitForHealth(t, base+"/healthz")
+	waitForHealth(t, base+"/feeds/twitter/health")
 	waitForLog(t, p, "listening")
 	waitForLog(t, p, upstream)
 	waitForLog(t, p, "version=dev")
 
-	for _, path := range []string{"/", "/healthz", "/feeds/twitter/", "/feeds/twitter/healthz"} {
+	for _, path := range []string{"/", "/feeds/twitter/", "/feeds/twitter/health"} {
 		status, body := httpGet(t, base+path)
 		if status != http.StatusOK {
 			t.Errorf("GET %s = %d, want 200", path, status)
@@ -170,6 +170,10 @@ func TestMainServesAndShutsDownGracefully(t *testing.T) {
 		if path == "/feeds/twitter/" && !strings.Contains(body, "/feeds/twitter/u/{handle}") {
 			t.Errorf("the index under the base path does not advertise it:\n%s", body)
 		}
+	}
+
+	if status, _ := httpGet(t, base+"/health"); status != http.StatusNotFound {
+		t.Errorf("GET /health at the root with a base path set = %d, want 404", status)
 	}
 
 	if status, _ := httpGet(t, base+"/u/go-pher"); status != http.StatusBadRequest {

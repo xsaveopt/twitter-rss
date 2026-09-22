@@ -94,6 +94,18 @@ func (c *Client) Fetch(ctx context.Context, handle string) (*Feed, error) {
 	return nil, errors.Join(errs...)
 }
 
+func (c *Client) Healthy() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := c.now()
+	for _, base := range c.bases {
+		if until, ok := c.down[base]; !ok || !now.Before(until) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Client) order() []string {
 	n := len(c.bases)
 	start := int(c.next.Add(1)-1) % n
