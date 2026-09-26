@@ -57,7 +57,7 @@ func (b *Builder) items(f *nitter.Feed) []*feeds.Item {
 	handle := f.Handle
 	items := make([]*feeds.Item, 0, len(f.Items))
 	for _, it := range f.Items {
-		created := time.Now()
+		created := f.Fetched
 		if it.PublishedParsed != nil {
 			created = *it.PublishedParsed
 		}
