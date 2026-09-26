@@ -286,3 +286,23 @@ func TestEnvDuration(t *testing.T) {
 		})
 	}
 }
+
+func TestFromEnvRejectsNitterURLWithoutSchemeAndHost(t *testing.T) {
+	clearEnv(t)
+	for _, env := range []string{
+		"/nitter",
+		"//nitter.example.com",
+		"https:///nitter",
+	} {
+		t.Run(env, func(t *testing.T) {
+			t.Setenv("TWITTER_RSS_NITTER", env)
+			c, err := FromEnv("dev")
+			if err == nil {
+				t.Fatalf("FromEnv(%q) succeeded with NitterBases %v, want an error", env, c.NitterBases)
+			}
+			if !strings.Contains(err.Error(), "TWITTER_RSS_NITTER") {
+				t.Errorf("FromEnv(%q) error = %q, want it to name the variable", env, err)
+			}
+		})
+	}
+}

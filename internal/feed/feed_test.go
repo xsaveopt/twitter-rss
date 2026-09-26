@@ -241,10 +241,11 @@ func TestCombinedWithNoFeeds(t *testing.T) {
 }
 
 func TestItemsFallBackForMissingFields(t *testing.T) {
-	before := time.Now()
+	fetched := *at(t, "2025-09-20T12:00:00Z")
 	f := &nitter.Feed{
 		Handle:  "gopher",
 		Origins: []string{"https://nitter.example.com"},
+		Fetched: fetched,
 		Items: []*gofeed.Item{
 			{
 				Title: "No guid, no date",
@@ -260,8 +261,11 @@ func TestItemsFallBackForMissingFields(t *testing.T) {
 	if items[0].Id != "https://x.com/gopher/status/1" {
 		t.Errorf("Id = %q, want the rewritten link as the fallback id", items[0].Id)
 	}
-	if items[0].Created.Before(before) {
-		t.Errorf("Created = %v, want a time at or after %v", items[0].Created, before)
+	if items[0].Created.IsZero() {
+		t.Error("Created is zero, want a fallback time")
+	}
+	if items[0].Created.After(fetched) {
+		t.Errorf("Created = %v, want no later than the fetch time %v", items[0].Created, fetched)
 	}
 }
 
@@ -351,5 +355,100 @@ func TestTitleOrDefault(t *testing.T) {
 	}
 	if got := titleOrDefault(&nitter.Feed{Handle: "gopher"}); got != "Tweets from @gopher" {
 		t.Errorf("titleOrDefault = %q, want the default", got)
+	}
+}
+
+func TestCombinedUndatedItemDoesNotOutrankNewerDatedItems(t *testing.T) {
+	undated := &nitter.Feed{
+		Handle:  "gopher",
+		Origins: []string{"https://nitter.example.com"},
+		Fetched: *at(t, "2025-09-16T00:00:00Z"),
+		Items: []*gofeed.Item{
+			{
+				Title: "No date",
+				Link:  "https://nitter.example.com/gopher/status/1#m",
+				GUID:  "https://nitter.example.com/gopher/status/1#m",
+			},
+		},
+	}
+	dated := &nitter.Feed{
+		Handle:  "rustlang",
+		Origins: []string{"https://nitter.example.com"},
+		Fetched: *at(t, "2025-09-20T12:00:00Z"),
+		Items: []*gofeed.Item{
+			{
+				Title:           "Dated",
+				Link:            "https://nitter.example.com/rustlang/status/2#m",
+				GUID:            "https://nitter.example.com/rustlang/status/2#m",
+				PublishedParsed: at(t, "2025-09-18T08:00:00Z"),
+			},
+		},
+	}
+
+	out, err := builder(true).Combined("twitter-rss", []*nitter.Feed{undated, dated})
+	if err != nil {
+		t.Fatalf("Combined: %v", err)
+	}
+
+	got := parseRSS(t, out)
+	want := []string{"@rustlang: Dated", "@gopher: No date"}
+	if len(got.Channel.Items) != len(want) {
+		t.Fatalf("got %d items, want %d", len(got.Channel.Items), len(want))
+	}
+	for i, w := range want {
+		if got.Channel.Items[i].Title != w {
+			t.Errorf("item %d title = %q, want %q", i, got.Channel.Items[i].Title, w)
+		}
+	}
+
+	for _, it := range got.Channel.Items {
+		if it.Title != "@gopher: No date" {
+			continue
+		}
+		pub, err := time.Parse(time.RFC1123Z, it.PubDate)
+		if err != nil {
+			t.Fatalf("parsing pubDate %q: %v", it.PubDate, err)
+		}
+		if pub.After(undated.Fetched) {
+			t.Errorf("undated item pubDate = %v, want no later than its feed's fetch time %v", pub, undated.Fetched)
+		}
+	}
+}
+
+func TestCombinedUndatedItemsAreStableAcrossRenders(t *testing.T) {
+	f := &nitter.Feed{
+		Handle:  "gopher",
+		Origins: []string{"https://nitter.example.com"},
+		Fetched: *at(t, "2025-09-16T00:00:00Z"),
+		Items: []*gofeed.Item{
+			{Title: "First undated", GUID: "a"},
+			{Title: "Second undated", GUID: "b"},
+		},
+	}
+
+	b := builder(true)
+	render := func() rss {
+		out, err := b.Combined("twitter-rss", []*nitter.Feed{f})
+		if err != nil {
+			t.Fatalf("Combined: %v", err)
+		}
+		return parseRSS(t, out)
+	}
+
+	first := render()
+	time.Sleep(1100 * time.Millisecond)
+	second := render()
+
+	if len(first.Channel.Items) != 2 || len(second.Channel.Items) != 2 {
+		t.Fatalf("got %d and %d items, want 2 each", len(first.Channel.Items), len(second.Channel.Items))
+	}
+	for i := range first.Channel.Items {
+		a, b := first.Channel.Items[i], second.Channel.Items[i]
+		if a.Title != b.Title {
+			t.Errorf("item %d title changed between renders: %q then %q", i, a.Title, b.Title)
+		}
+		if a.PubDate != b.PubDate {
+			t.Errorf("item %d pubDate changed between renders: %q then %q", i, a.PubDate, b.PubDate)
+		}
 	}
 }

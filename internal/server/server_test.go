@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -435,5 +436,84 @@ func TestWriteRSS(t *testing.T) {
 	}
 	if rec.Body.String() != "<rss/>" {
 		t.Errorf("body = %q", rec.Body.String())
+	}
+}
+
+func TestHandleCombinedDeduplicatesHandles(t *testing.T) {
+	up := nitterStub(t, map[string]bool{"gopher": true})
+	h := newServer(t, "", up.URL).Handler()
+
+	for _, users := range []string{"gopher,gopher", "gopher,GoPher,GOPHER"} {
+		t.Run(users, func(t *testing.T) {
+			rec := get(t, h, "/combined?users="+users)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+			}
+			var parsed struct {
+				Channel struct {
+					Items []struct {
+						GUID string `xml:"guid"`
+					} `xml:"item"`
+				} `xml:"channel"`
+			}
+			if err := xml.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+				t.Fatalf("response is not well-formed XML: %v", err)
+			}
+			if len(parsed.Channel.Items) != 1 {
+				t.Errorf("got %d items for a handle listed more than once, want 1", len(parsed.Channel.Items))
+			}
+		})
+	}
+}
+
+func TestHandleCombinedRejectsUnboundedUserList(t *testing.T) {
+	var hits atomic.Int64
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Write([]byte(fixtureRSS))
+	}))
+	t.Cleanup(up.Close)
+	h := newServer(t, "", up.URL).Handler()
+
+	users := make([]string, 1000)
+	for i := range users {
+		users[i] = "user" + strconv.Itoa(i)
+	}
+
+	rec := get(t, h, "/combined?users="+strings.Join(users, ","))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d for %d handles, want 400", rec.Code, len(users))
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("upstream hits = %d, want 0; an oversized list must be rejected before fetching", n)
+	}
+}
+
+func TestErrorBodiesDoNotLeakUpstream(t *testing.T) {
+	const upstreamDetail = "upstream stack trace detail"
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		status := http.StatusInternalServerError
+		if strings.HasPrefix(r.URL.Path, "/missing/") {
+			status = http.StatusNotFound
+		}
+		http.Error(w, upstreamDetail, status)
+	}))
+	t.Cleanup(up.Close)
+	host := strings.TrimPrefix(up.URL, "http://")
+
+	for _, target := range []string{"/u/gopher", "/u/missing", "/combined?users=gopher,missing"} {
+		t.Run(target, func(t *testing.T) {
+			h := newServer(t, "", up.URL).Handler()
+			rec := get(t, h, target)
+			if rec.Code != http.StatusBadGateway {
+				t.Fatalf("status = %d, want 502", rec.Code)
+			}
+			body := rec.Body.String()
+			for _, leak := range []string{up.URL, host, upstreamDetail} {
+				if strings.Contains(body, leak) {
+					t.Errorf("error body %q exposes %q", body, leak)
+				}
+			}
+		})
 	}
 }

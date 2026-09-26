@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -200,4 +201,129 @@ func TestMainReportsAnUnusableAddress(t *testing.T) {
 	p := startMain(t, "TWITTER_RSS_NITTER=https://nitter.example.invalid", "TWITTER_RSS_ADDR="+addr)
 	waitForLog(t, p, "server failed")
 	_ = p.cmd.Wait()
+}
+
+func healthEnv(t *testing.T, addr, basePath string) {
+	t.Helper()
+	t.Setenv("TWITTER_RSS_NITTER", "https://nitter.example.invalid")
+	t.Setenv("TWITTER_RSS_ADDR", addr)
+	t.Setenv("TWITTER_RSS_BASE_PATH", basePath)
+}
+
+func healthServer(t *testing.T, path string, status int) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != path {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(status)
+	}))
+	t.Cleanup(srv.Close)
+	_, port, err := net.SplitHostPort(srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("splitting the test server address: %v", err)
+	}
+	return port
+}
+
+func TestRunHealthcheckSucceedsWhenHealthy(t *testing.T) {
+	port := healthServer(t, "/health", http.StatusOK)
+	healthEnv(t, ":"+port, "")
+
+	if got := runHealthcheck(); got != 0 {
+		t.Errorf("runHealthcheck() = %d, want 0", got)
+	}
+}
+
+func TestRunHealthcheckUsesBasePath(t *testing.T) {
+	port := healthServer(t, "/feeds/twitter/health", http.StatusOK)
+	healthEnv(t, "0.0.0.0:"+port, "/feeds/twitter/")
+
+	if got := runHealthcheck(); got != 0 {
+		t.Errorf("runHealthcheck() = %d, want 0 when the health route lives under the base path", got)
+	}
+}
+
+func TestRunHealthcheckFailsOnDegradedStatus(t *testing.T) {
+	for _, status := range []int{http.StatusServiceUnavailable, http.StatusNotFound, http.StatusNoContent} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			port := healthServer(t, "/health", status)
+			healthEnv(t, ":"+port, "")
+
+			if got := runHealthcheck(); got != 1 {
+				t.Errorf("runHealthcheck() = %d with a %d response, want 1", got, status)
+			}
+		})
+	}
+}
+
+func TestRunHealthcheckFailsWhenBasePathDiffers(t *testing.T) {
+	port := healthServer(t, "/health", http.StatusOK)
+	healthEnv(t, ":"+port, "twitter")
+
+	if got := runHealthcheck(); got != 1 {
+		t.Errorf("runHealthcheck() = %d, want 1 when nothing answers under the base path", got)
+	}
+}
+
+func TestRunHealthcheckFailsWhenNothingListens(t *testing.T) {
+	_, port, err := net.SplitHostPort(freeAddr(t))
+	if err != nil {
+		t.Fatalf("splitting the free address: %v", err)
+	}
+	healthEnv(t, ":"+port, "")
+
+	if got := runHealthcheck(); got != 1 {
+		t.Errorf("runHealthcheck() = %d, want 1", got)
+	}
+}
+
+func TestRunHealthcheckFailsOnBadConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		nitter string
+		addr   string
+	}{
+		{"missing nitter", "", ":8080"},
+		{"address without port", "https://nitter.example.invalid", "8080"},
+		{"address with too many colons", "https://nitter.example.invalid", "a:b:c"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			healthEnv(t, tt.addr, "")
+			t.Setenv("TWITTER_RSS_NITTER", tt.nitter)
+
+			if got := runHealthcheck(); got != 1 {
+				t.Errorf("runHealthcheck() = %d, want 1", got)
+			}
+		})
+	}
+}
+
+func TestRunHealthcheckTimesOut(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+	_, port, err := net.SplitHostPort(srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("splitting the test server address: %v", err)
+	}
+	healthEnv(t, ":"+port, "")
+
+	start := time.Now()
+	got := runHealthcheck()
+	elapsed := time.Since(start)
+	if got != 1 {
+		t.Errorf("runHealthcheck() = %d against a hanging server, want 1", got)
+	}
+	if elapsed > 6*time.Second {
+		t.Errorf("runHealthcheck() took %v, want it bounded by its own timeout", elapsed)
+	}
 }
