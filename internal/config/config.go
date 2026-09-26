@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,6 +17,7 @@ type Config struct {
 	RewriteLinks bool
 	UserAgent    string
 	HTTPTimeout  time.Duration
+	MaxUsers     int
 }
 
 func FromEnv(version string) (Config, error) {
@@ -26,6 +28,7 @@ func FromEnv(version string) (Config, error) {
 		RewriteLinks: envBool("TWITTER_RSS_REWRITE_LINKS", true),
 		UserAgent:    envOr("TWITTER_RSS_USER_AGENT", "twitter-rss/"+version+" (+https://github.com/xsaveopt/twitter-rss)"),
 		HTTPTimeout:  envDuration("TWITTER_RSS_HTTP_TIMEOUT", 15*time.Second),
+		MaxUsers:     envPositiveInt("TWITTER_RSS_MAX_USERS", 10),
 	}
 
 	seen := make(map[string]bool)
@@ -34,8 +37,12 @@ func FromEnv(version string) (Config, error) {
 		if base == "" || seen[base] {
 			continue
 		}
-		if _, err := url.ParseRequestURI(base); err != nil {
+		u, err := url.ParseRequestURI(base)
+		if err != nil {
 			return c, fmt.Errorf("TWITTER_RSS_NITTER contains an invalid URL %q: %w", base, err)
+		}
+		if u.Scheme == "" || u.Host == "" {
+			return c, fmt.Errorf("TWITTER_RSS_NITTER contains a URL without scheme and host %q", base)
 		}
 		seen[base] = true
 		c.NitterBases = append(c.NitterBases, base)
@@ -77,6 +84,15 @@ func envDuration(key string, def time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
+		}
+	}
+	return def
+}
+
+func envPositiveInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
 		}
 	}
 	return def
