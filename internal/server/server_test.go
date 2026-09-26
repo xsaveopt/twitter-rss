@@ -473,9 +473,11 @@ func TestHandleCombinedRejectsUnboundedUserList(t *testing.T) {
 		w.Write([]byte(fixtureRSS))
 	}))
 	t.Cleanup(up.Close)
-	h := newServer(t, "", up.URL).Handler()
+	srv := newServer(t, "", up.URL)
+	srv.cfg.MaxUsers = 10
+	h := srv.Handler()
 
-	users := make([]string, 1000)
+	users := make([]string, 11)
 	for i := range users {
 		users[i] = "user" + strconv.Itoa(i)
 	}

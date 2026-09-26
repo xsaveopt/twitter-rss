@@ -85,7 +85,7 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 	f, err := s.client.Fetch(r.Context(), handle)
 	if err != nil {
 		s.log.Warn("fetch failed", "handle", handle, "err", err)
-		http.Error(w, "failed to fetch feed: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "failed to fetch feed", http.StatusBadGateway)
 		return
 	}
 
@@ -105,8 +105,8 @@ func (s *Server) handleCombined(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var feedsList []*nitter.Feed
-	var failed []string
+	var handles []string
+	seen := make(map[string]bool)
 	for _, h := range strings.Split(raw, ",") {
 		h = strings.TrimSpace(h)
 		if h == "" {
@@ -116,6 +116,22 @@ func (s *Server) handleCombined(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid Twitter handle: "+h, http.StatusBadRequest)
 			return
 		}
+		key := strings.ToLower(h)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		handles = append(handles, h)
+	}
+
+	if s.cfg.MaxUsers > 0 && len(handles) > s.cfg.MaxUsers {
+		http.Error(w, fmt.Sprintf("too many users, at most %d allowed", s.cfg.MaxUsers), http.StatusBadRequest)
+		return
+	}
+
+	var feedsList []*nitter.Feed
+	var failed []string
+	for _, h := range handles {
 		f, err := s.client.Fetch(r.Context(), h)
 		if err != nil {
 			s.log.Warn("fetch failed in combined", "handle", h, "err", err)

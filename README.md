@@ -20,4 +20,5 @@ Images are published to ghcr.io/xsaveopt/twitter-rss, where latest is the newest
 | `TWITTER_RSS_REWRITE_LINKS` | `true`                | Rewrite Nitter links to x.com.                                |
 | `TWITTER_RSS_HTTP_TIMEOUT`  | `15s`                 | Timeout for each request to a Nitter instance.                |
 | `TWITTER_RSS_USER_AGENT`    | `twitter-rss/version` | User-Agent sent to Nitter.                                    |
+| `TWITTER_RSS_MAX_USERS`     | `10`                  | Most distinct handles one /combined request may list.         |
 | `TZ`                        | `UTC`                 | Time zone name, like Europe/Amsterdam.                        |
